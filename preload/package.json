@@ -1,0 +1,35 @@
+{
+  "name": "preload",
+  "version": "0.1.0",
+  "private": true,
+  "homepage": ".",
+  "main": "./dist/index.js",
+  "scripts": {
+    "serve": "tsc -w -d -p tsconfig.json",
+    "build": "tsc -d -p tsconfig.json"
+  },
+  "dependencies": {
+    "chokidar": "^2.1.5",
+    "classnames": "^2.2.6",
+    "colors": "^1.3.0",
+    "connect": "^3.6.6",
+    "cors": "^2.8.4",
+    "event-stream": "3.3.4",
+    "faye-websocket": "0.11.x",
+    "http-auth": "3.1.x",
+    "http-proxy": "^1.16.2",
+    "morgan": "^1.9.1",
+    "object-assign": "^4.1.1",
+    "opn": "^5.3.0",
+    "proxy-middleware": "^0.15.0",
+    "send": "^0.16.2",
+    "serve-index": "^1.7.2",
+    "tslib": "2.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "link:../node_modules/@types/node",
+    "@types/tcp-port-used": "link:../node_modules/@types/tcp-port-used",
+    "typescript": "link:../node_modules/typescript",
+    "utools-helper": "link:../node_modules/utools-helper"
+  }
+}
