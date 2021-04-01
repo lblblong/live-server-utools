@@ -2,7 +2,7 @@
   "pluginName": "Live Server",
   "description": "启动静态资源实时服务，静态页面开发神器。",
   "author": "lblblong",
-  "repository": "git@github.com:lblblong/live-server-utools.git",
+  "homepage": "https://github.com/lblblong/live-server-utools",
   "main": "./build/index.html",
   "preload": "./preload/dist/index.js",
   "version": "0.0.1",

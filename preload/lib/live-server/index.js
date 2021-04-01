@@ -12,7 +12,6 @@ let fs = require('fs'),
   os = require('os'),
   chokidar = require('chokidar'),
   httpProxy = require('http-proxy')
-require('colors')
 
 var INJECTED_CODE = fs.readFileSync(path.join(__dirname, 'injected.html'), 'utf8')
 
@@ -85,7 +84,7 @@ function staticServer(root, onTagMissedCallback) {
 
         if (injectTag === null && LiveServer.logLevel >= 3) {
           console.warn(
-            'Failed to inject refresh script!'.yellow,
+            'Failed to inject refresh script!',
             "Couldn't find any of the tags ",
             injectCandidates,
             'from',
@@ -278,7 +277,7 @@ LiveServer.start = function (options, callback) {
   server.addListener('error', function (e) {
     // if (e.code === 'EADDRINUSE') {
     // 	var serveURL = protocol + '://' + host + ':' + port;
-    // 	console.log('%s is already in use. Trying another port.'.yellow, serveURL);
+    // 	console.log('%s is already in use. Trying another port.', serveURL);
     // 	setTimeout(function () {
     // 		server.listen(0, host);
     // 	}, 1000);
@@ -329,11 +328,11 @@ LiveServer.start = function (options, callback) {
     if (LiveServer.logLevel >= 1) {
       if (serveURL === openURL)
         if (serveURLs.length === 1) {
-          console.log('Serving "%s" at %s'.green, root, serveURLs[0])
+          console.log('Serving "%s" at %s', root, serveURLs[0])
         } else {
-          console.log('Serving "%s" at\n\t%s'.green, root, serveURLs.join('\n\t'))
+          console.log('Serving "%s" at\n\t%s', root, serveURLs.join('\n\t'))
         }
-      else console.log('Serving "%s" at %s (%s)'.green, root, openURL, serveURL)
+      else console.log('Serving "%s" at %s (%s)', root, openURL, serveURL)
     }
 
     // Launch browser
@@ -418,8 +417,8 @@ LiveServer.start = function (options, callback) {
   function handleChange(changePath) {
     var cssChange = path.extname(changePath) === '.css'
     if (LiveServer.logLevel >= 1) {
-      if (cssChange) console.log('CSS change detected'.magenta, changePath)
-      else console.log('Change detected'.cyan, changePath)
+      if (cssChange) console.log('CSS change detected', changePath)
+      else console.log('Change detected', changePath)
     }
     clients.forEach(function (ws) {
       if (ws) ws.send(cssChange && !fullReload ? 'refreshcss' : 'reload')
@@ -435,13 +434,13 @@ LiveServer.start = function (options, callback) {
     .on('addDir', handleChange)
     .on('unlinkDir', handleChange)
     .on('ready', function () {
-      if (LiveServer.logLevel >= 1) console.log('Ready for changes'.cyan)
+      if (LiveServer.logLevel >= 1) console.log('Ready for changes')
       if (callback) {
         callback()
       }
     })
     .on('error', function (err) {
-      console.log('ERROR:'.red, err)
+      console.log('ERROR:', err)
     })
 
   return server
