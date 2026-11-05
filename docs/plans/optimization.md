@@ -63,6 +63,15 @@
 - 非 `/ws` 且未配置 proxy 的 WebSocket 升级请求现在主动断开（旧实现会抛 TypeError）。
 - 启动失败（端口占用/超时）会回滚为 off 并通知；新建记录失败后仍留在列表（可重试或删除），与旧行为一致。
 
+### 2026-11-05 二轮优化（Vite 迁移后）
+
+- 端口探测加 800ms 超时（超时按占用处理）与 200 次上限，避免防火墙 DROP/端口段占满时 UI 永久 loading。
+- closeServer 只在 500ms 兜底超时时才 forceShutdown；正常 shutdown 回调不再多余强制关闭。
+- 移除已废弃的 event-stream：注入脚本改为内置 Transform（替换首个 `</body>` 等标签），修复了原实现 "替换时重复保留 tag 导致 Content-Length 少 7 字节" 的隐患，并用 30B/50KB/200KB 三档响应验证长度一致。
+- 渲染层改用 mobx-react-lite（原 mobx-react 仅用到 observer），Vite target 对齐 chrome132。
+- 目录打开改用 toFileUrl（反斜杠/空格/中文/UNC 规范化），修复 Windows 上 "打开目录" 可能无响应。
+- 体积：asar 2,199,805 → 2,062,842 字节（-137KB）；构建 JS 220.36KB → 216.21KB（gzip 68.05KB）。
+
 ### 已知残留
 
 - `waitServerReady` 5s 超时按启动失败回滚（极慢机器可能误报）。

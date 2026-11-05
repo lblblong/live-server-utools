@@ -21,9 +21,11 @@ export function openSelectDirectoryDialog(options: {
  * loading）。改成 async function 后异常会正常向上 reject，由调用方 try/catch 处理。
  */
 export async function getCanUsePort(usedPort: number[], port: number): Promise<number> {
+  const startPort = port
   const lastPort = usedPort[usedPort.length - 1]
   let first = true
-  while (true) {
+  // 上限保护：极端情况（端口段被占满 / 探测持续异常）下避免无限循环把端口探测变成死循环
+  for (let attempts = 0; attempts < 200; attempts++) {
     const used = await portCheck(port)
     if (!used) return port
     // 首次冲突且已有其它服务端口时，跳到「最后一个已用端口 + 1」；否则逐个 +1（与原逻辑逐字一致）
@@ -34,30 +36,37 @@ export async function getCanUsePort(usedPort: number[], port: number): Promise<n
       port++
     }
   }
+  throw new Error(`连续探测 200 次仍未找到可用端口（起始端口 ${startPort}）`)
 }
 
 /**
  * 探测 127.0.0.1 指定端口的连通性。
  * - resolve true：端口已被占用（TCP 连接建立成功）
  * - resolve false：端口空闲（ECONNREFUSED）
+ * - resolve true（超时，默认 800ms）：按「已占用」处理，避免防火墙 DROP 等场景永久 pending
  * - reject：非 ECONNREFUSED 的探测异常（如 EHOSTUNREACH / EACCES），由调用方决定如何处理
  *
  * 注意：无论探测结果如何都必须销毁 socket —— 连接成功时若不销毁，每次探测都会留下一条长连接
  * （句柄泄漏，且该连接会被 http-shutdown 当作 idle 连接统计）。这是本函数的历史缺陷修复点。
  */
-export function portCheck(port: number) {
+export function portCheck(port: number, timeoutMs = 800) {
   return new Promise<boolean>((ok, fail) => {
     const client = new net.Socket()
-    // connect / error 只会先到其一，用 settled 保证 Promise 只结算一次
+    // connect / error / timeout 只会先到其一，用 settled 保证 Promise 只结算一次
     let settled = false
+    let timer: any = null
     const settle = (used: boolean, err?: any) => {
       if (settled) return
       settled = true
-      // 先销毁再结算：锁住「探测结束即释放句柄」，异常路径也不会漏
+      if (timer) clearTimeout(timer)
+      timer = null
+      // 先销毁再结算：锁住「探测结束即释放句柄」，异常/超时路径也不会漏
       client.destroy()
       if (err) fail(err)
       else ok(used)
     }
+    // 超时按「已占用」处理（安全侧）：宁可跳过该端口或提示占用，也不让调用方永久等待
+    timer = setTimeout(() => settle(true), timeoutMs)
     client.once('connect', () => {
       settle(true)
     })
@@ -168,12 +177,13 @@ export function closeServer(server: Server): Promise<void> {
       }
     }
 
-    const finish = () => {
+    const finish = (force: boolean) => {
       if (settled) return
       settled = true
       if (timer) clearTimeout(timer)
       timer = null
-      forceClose()
+      // 只在兜底超时时才强制销毁连接：正常 shutdown 回调触发时 server 已 close，再 force 是多余调用
+      if (force) forceClose()
       resolve()
     }
 
@@ -189,15 +199,18 @@ export function closeServer(server: Server): Promise<void> {
     }
 
     // 2) 兜底定时器：keep-alive 长连接可能让 shutdown 的 close 回调迟迟不到
-    timer = setTimeout(finish, 500)
+    timer = setTimeout(() => finish(true), 500)
 
     // 3) 优先使用 http-shutdown 的 shutdown（其回调在 server 完全关闭后触发）
     try {
-      if (typeof server.shutdown === 'function') server.shutdown(finish)
-      else finish()
+      if (typeof server.shutdown === 'function') server.shutdown(() => finish(false))
+      else {
+        forceClose()
+        finish(false)
+      }
     } catch (err) {
       console.error('closeServer: shutdown 失败', err)
-      finish()
+      finish(true)
     }
   })
 }

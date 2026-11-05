@@ -18,13 +18,12 @@
     "url": "https://github.com/tapio/live-server/issues"
   },
   "dependencies": {
-    "chokidar": "^2.1.5",
-    "connect": "^3.6.6",
-    "event-stream": "3.3.4",
-    "faye-websocket": "0.11.x",
-    "morgan": "^1.9.1",
-    "send": "^0.16.2",
-    "serve-index": "^1.7.2"
+    "chokidar": "^3.6.0",
+    "connect": "^3.7.0",
+    "faye-websocket": "^0.11.4",
+    "morgan": "^1.12.1",
+    "send": "^0.19.2",
+    "serve-index": "^1.9.2"
   },
   "deprecated": false,
   "devDependencies": {

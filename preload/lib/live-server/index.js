@@ -7,7 +7,7 @@ let fs = require('fs'),
   url = require('url'),
   http = require('http'),
   send = require('send'),
-  es = require('event-stream'),
+  Transform = require('stream').Transform,
   os = require('os'),
   chokidar = require('chokidar')
 
@@ -36,6 +36,44 @@ function optionalRequire(pkg, feature) {
 }
 
 var INJECTED_CODE = fs.readFileSync(path.join(__dirname, 'injected.html'), 'utf8')
+
+/**
+ * 只替换第一个匹配片段的最小 Transform（替代已废弃的 event-stream 的 es.replace）。
+ *
+ * 为什么自己实现：event-stream 3.x 已停止维护且依赖树大，本文件只用它的「流式首匹配替换」一个能力。
+ * 这里按需缓冲 chunk 直到匹配到 tag（HTML 注入标签一定存在于刚检测过的文件里），替换后原样透传剩余数据；
+ * 未命中任何 tag 时在 flush 阶段把缓冲区整体输出，不丢内容。
+ *
+ * @param {string} tag 要替换的第一个标签（如 '</body>'）
+ * @param {string} replacement 替换内容（注入脚本 + 原标签）
+ */
+function replaceFirstTagStream(tag, replacement) {
+  var tagBuffer = Buffer.from(tag)
+  var buffered = Buffer.alloc(0)
+  var replaced = false
+  return new Transform({
+    transform: function (chunk, encoding, callback) {
+      if (replaced) return callback(null, chunk)
+      buffered = Buffer.concat([buffered, chunk])
+      var index = buffered.indexOf(tagBuffer)
+      if (index === -1) return callback()
+      replaced = true
+      var output = Buffer.concat([
+        buffered.subarray(0, index),
+        Buffer.from(replacement),
+        // 跳过被替换掉的原始 tag（replacement 里已经包含 tag），否则响应体会多出 tag 长度、
+        // 与 Content-Length 不一致，浏览器/HTTP 客户端会把它当成下一个响应而报 parse error
+        buffered.subarray(index + tagBuffer.length),
+      ])
+      buffered = Buffer.alloc(0)
+      callback(null, output)
+    },
+    flush: function (callback) {
+      if (!replaced && buffered.length > 0) this.push(buffered)
+      callback()
+    },
+  })
+}
 
 let useBrowserExtension = false
 let GET_INJECTED_CODE = () => {
@@ -154,11 +192,14 @@ function staticServer(root, onTagMissedCallback) {
     function inject(stream) {
       if (injectTag) {
         // We need to modify the length given to browser
-        var len = GET_INJECTED_CODE().length + res.getHeader('Content-Length')
+        // 用字节长度而不是字符串 length：注入脚本若包含非 ASCII 字符，两者会不一致，
+        // 导致 Content-Length 与实际响应体不匹配（客户端报 parse error）。
+        var injectedCode = GET_INJECTED_CODE()
+        var len = Buffer.byteLength(injectedCode) + Number(res.getHeader('Content-Length'))
         res.setHeader('Content-Length', len)
         var originalPipe = stream.pipe
         stream.pipe = function (resp) {
-          originalPipe.call(stream, es.replace(new RegExp(injectTag, 'i'), GET_INJECTED_CODE() + injectTag)).pipe(resp)
+          originalPipe.call(stream, replaceFirstTagStream(injectTag, injectedCode + injectTag)).pipe(resp)
         }
       }
     }

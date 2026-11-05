@@ -1,6 +1,7 @@
 import classNames from 'classnames'
-import { observer } from 'mobx-react'
+import { observer } from 'mobx-react-lite'
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { toFileUrl } from '../../common/utils/other'
 import { Icon } from '../../components/icon'
 import { LiveServer, LiveServerState } from '../../model/live-server'
 import { StoreServer } from '../../store/server'
@@ -187,7 +188,7 @@ const ServerItem = memo(
               {item.port}
             </span>
           )}
-          <span className={styles.dir} onClick={() => utools.shellOpenExternal('file://' + item.dir)}>
+          <span className={styles.dir} onClick={() => utools.shellOpenExternal(toFileUrl(item.dir))}>
             {item.dir}
           </span>
         </div>
@@ -209,7 +210,7 @@ const ServerItem = memo(
           >
             删除
           </button>
-          <button className={styles.btn} onClick={() => utools.shellOpenExternal('file://' + item.dir)}>
+          <button className={styles.btn} onClick={() => utools.shellOpenExternal(toFileUrl(item.dir))}>
             打开目录
           </button>
           <button disabled={actionsDisabled} className={styles.btn} onClick={() => onToggle(item)}>

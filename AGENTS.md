@@ -17,8 +17,8 @@
 
 ## 2. 技术栈
 
-- **渲染进程（插件主界面）**：React 18 + MobX 6 + TypeScript 5 + **Vite 7**（`@vitejs/plugin-react`）；SCSS modules（`sass`），`src/pages/manager/index.module.scss` 通过 `@use` 引用 `src/assets/css/vs.scss` 变量；构建产物固定输出 `build/`（`base: './'`）。
-- **预加载（Node 侧）**：独立 TS 工程 `preload/tsconfig.json`（ES2019/commonjs，`strict=false`），`tsc` 输出 `preload/dist/index.js`；运行时依赖 vendored `preload/lib/live-server`（改版 live-server 1.x）与 `preload/lib/http-shutdown`；依赖清单见 `preload/package.json`（chokidar 3 / connect / faye-websocket 0.11 / send 0.19 / serve-index / morgan / event-stream）。2026-11-05 优化中已裁剪 opn / http-auth / cors / proxy-middleware / http-proxy / object-assign（默认路径不需要，见 §6-2/7）。
+- **渲染进程（插件主界面）**：React 18 + MobX 6（`mobx-react-lite`）+ TypeScript 5 + **Vite 7**（`@vitejs/plugin-react`）；SCSS modules（`sass`），`src/pages/manager/index.module.scss` 通过 `@use` 引用 `src/assets/css/vs.scss` 变量；构建产物固定输出 `build/`（`base: './'`）。
+- **预加载（Node 侧）**：独立 TS 工程 `preload/tsconfig.json`（ES2019/commonjs，`strict=false`），`tsc` 输出 `preload/dist/index.js`；运行时依赖 vendored `preload/lib/live-server`（改版 live-server 1.x）与 `preload/lib/http-shutdown`；依赖清单见 `preload/package.json`（chokidar 3 / connect / faye-websocket 0.11 / send 0.19 / serve-index / morgan；注入脚本的流式替换用内置 Transform 实现，已移除 event-stream）。2026-11-05 优化中已裁剪 opn / http-auth / cors / proxy-middleware / http-proxy / object-assign（默认路径不需要，见 §6-2/7）。
 - **持久化**：uTools 内置 db（`utools.db`），key = `utools.getLocalId() + '_servers'`，value = `[{ dir, port, customPort? }]`（`customPort` 缺省 `false`，旧数据兼容）。
 - **产物**：`build/`（渲染进程）、`preload/dist/index.js`（预加载）；`plugin.json` 的 `main` / `preload` 分别指向这两处。
 
@@ -36,7 +36,7 @@
 | `src/assets/icon/fonts/` | 图标字体资源（`icon.css` 被入口引入） |
 | `preload/src/index.ts` | 预加载入口：把 `{ startLiveServer, httpShutdown, getCanUsePort, isPortAvailable, waitServerReady, closeServer, openSelectDirectoryDialog }` 挂到 `window.utils`，并声明 `Window.utils` / `Server` / `StartOptions` 类型 |
 | `preload/src/utils.ts` | 目录选择对话框、TCP 端口探测与可用端口分配、`isPortAvailable`、`waitServerReady`（真实 listening/error）、`closeServer`（shutdown 回调 + 500ms force 兜底，含 watcher 关闭） |
-| `preload/lib/live-server/` | 改版 live-server：静态服务 + serve-index + chokidar 监听（watcher 挂在 server 实例上）+ 注入热刷新脚本（`injected.html`，按 path+mtime 缓存检测）；`opn`/`http-auth`/`cors`/`proxy-middleware`/`http-proxy` 为已裁剪的可选能力 |
+| `preload/lib/live-server/` | 改版 live-server：静态服务 + serve-index + chokidar 监听（watcher 挂在 server 实例上）+ 注入热刷新脚本（`injected.html`，按 path+mtime 缓存检测；流式替换用内置 Transform）；`opn`/`http-auth`/`cors`/`proxy-middleware`/`http-proxy` 为已裁剪的可选能力 |
 | `preload/lib/http-shutdown/` | 给 server 挂 `shutdown(cb)` / `forceShutdown(cb)`，跟踪并销毁空闲连接 |
 | `public/` | 静态资源（favicon / robots / manifest），由 Vite 原样复制到 `build/`；主界面入口是根目录 `index.html` |
 | `plugin.json` | uTools 插件清单：命令 `Live Server` + 超级面板「启动实时文件服务」（匹配 `explorer.exe`） |
@@ -89,14 +89,14 @@
 1. **构建链现状**：CRA4 在 Node >= 24 无法构建（webpack4 md4 / postcss exports），已于 2026-11-05 迁移到 Vite 7 + React 18 + TypeScript 5，命令见 §11；§5 为历史记录。
 2. **一次端口冲突可能误杀别的服务（最高危运行时缺陷）**：~~listen error 里 `e.toString().red` 打印 undefined 并调用全局 `LiveServer.shutdown()` 关掉别的服务~~ **已修复**：error 只关当前实例的 watcher/server，日志改为 `console.error(e)`；模块级 `LiveServer.shutdown()` 仅保留为兼容 API。
 3. **启动是 fire-and-forget**：~~start() 同步返回、UI 立刻置 on~~ **已修复**：新增 `waitServerReady`（listening/error/5s 超时），渲染层 await 后才置 on，失败回滚 off 并提示。
-4. **端口探测/分配**：TCP connect 127.0.0.1 判断占用、默认 6600；冲突时跳 `[...usedPort]` 的**末位 + 1（Set 插入序）**再逐个 +1；探测成功后已 `close` socket（此前泄漏已修）。**仍存在**：无「探测→预留」机制 → 两路 startServer 可能拿到同一端口（TOCTOU）；**自定义端口探测只连 127.0.0.1，而服务绑 0.0.0.0**：仅绑定具体 LAN IP 的进程、Windows 保留端口段或探测→绑定 TOCTOU 仍可能漏检（见 `docs/plans/custom-port.md`）。
+4. **端口探测/分配**：TCP connect 127.0.0.1 判断占用、默认 6600；冲突时跳 `[...usedPort]` 的**末位 + 1（Set 插入序）**再逐个 +1；探测成功后已 `close` socket（此前泄漏已修）；另加 800ms 超时（超时按占用处理）与 200 次探测上限，避免防火墙 DROP / 端口段占满时卡死。**仍存在**：无「探测→预留」机制 → 两路 startServer 可能拿到同一端口（TOCTOU）；**自定义端口探测只连 127.0.0.1，而服务绑 0.0.0.0**：仅绑定具体 LAN IP 的进程、Windows 保留端口段或探测→绑定 TOCTOU 仍可能漏检（见 `docs/plans/custom-port.md`）。
 5. **`new Promise(async …)` 反模式**：**已修复**：`getCanUsePort` 改为 `async function`，异常可 reject，不再出现永久 loading 死行。
 6. **停止不彻底 / watcher 泄漏**：**已修复**：`closeServer` 用 shutdown 回调 + 500ms force 兜底，并先关闭挂在 server 上的 chokidar watcher；UI 不再固定等 1s。残留：`usedPort` 仍只在内存、`loadDb` 不恢复。
 7. **多服务并存假设不成立**：**已修复**：lib 把 watcher 挂到各自 server 实例；非 `/ws` upgrade 且无 proxy 时安全断开（旧实现抛 TypeError）；error 路径不再调全局 shutdown。残留：`LiveServer.server/watcher/logLevel` 模块级字段仍存在（仅兼容用）。
 8. **`file: 'index.html'` + `serve-index`**：所有 404 都回 `index.html`(200)，缺失资源不再 404；`host: '0.0.0.0'` + 目录列举 + 无认证 → 局域网可访问（安全面待需求确认）。
 9. **错误处理/反馈缺失**：**已修复主要路径**：取消目录选择不再产生未处理 rejection；启动失败/超时、写库失败都收敛为通知；启动失败统一回 off。残留：极端异步边界仍以 `utools.showNotification` 为主。
 10. **状态双口径**：**已修复**：按钮文案改由 `state===loading` 驱动（启动中…/停止中…/保存中…），active 样式仍按 `server` 真值。
-11. **MobX/React 细节**：**已修复** 列表 `key`、空态、按钮即时反馈；残留：`.lbox/.dir` 的 `min-width: 0`、删除二次确认、`'file://' + dir` 的 Windows 路径规范化未处理。
+11. **MobX/React 细节**：**已修复** 列表 `key`、空态、按钮即时反馈；残留：`.lbox/.dir` 的 `min-width: 0`、删除二次确认未处理；`file://` 路径已由 `toFileUrl`（反斜杠/空格/中文/UNC）规范化。
 12. **初始化顺序无防护**：若 `onPluginEnter` 先于 `onPluginReady`，`startServer` 新增的行可能被随后 `loadDb` 覆盖（丢 server 引用、状态回 off）；`onPluginEnter` 重复调用 `getCurrentFolderPath()`。**仍存在**。
 13. **构建联动陷阱（已随构建链迁移消失）**：旧 CRA 脚本的 `--esModuleInterop` 问题不再存在；`preload/src/index.ts` 保留 `httpShutdown` 的调用签名断言，删除会导致渲染层 `window.utils.httpShutdown(...)` 类型报错。`lib/live-server/index.d.ts` 已同步 `StartOptions`/`Server` 扩展。
 14. **模板残留**：已删除 CRA 的 `public/index.html`，根 `index.html` 标题改为 `Live Server`；`public/manifest.json` 仍引用不存在的 logo192/logo512（页面未引用，可后续清理）。
@@ -174,7 +174,7 @@ cd preload; npx tsc -d -p tsconfig.json   # 仅重建 preload
 ```
 
 - 根 `tsconfig.json` 使用 `moduleResolution: Bundler`，并通过 `paths` 把 `preload` 映射到 `preload/src/index.ts`（类型单一来源）；Vite 实际打包时 `import { Server } from 'preload'` 是纯类型导入，会被移除，不需要运行时解析。
-- `vite.config.ts` 的 `base: './'` 必须保留：插件在 uTools 内以本地文件加载 `build/index.html`，绝对资源路径会失效。
+- `vite.config.ts` 的 `base: './'` 必须保留：插件在 uTools 内以本地文件加载 `build/index.html`，绝对资源路径会失效；`build.target/cssTarget` 对齐 uTools Runtime 的 `chrome132`，不做无意义的 ES 降级。
 - 入口 HTML 是仓库根目录的 `index.html`（Vite 约定）；`public/` 下文件由 Vite 原样复制到 `build/`。
 - 构建产物：`build/`（渲染）、`preload/dist/`（预加载）；两者都被 .gitignore 排除。
 
