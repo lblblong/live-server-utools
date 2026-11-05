@@ -3,18 +3,22 @@
 本文件面向任何能读取仓库文件的 AI 编程工具 / Agent。先读本文件，再按任务读对应源码与文档。
 文档是导航与说明，**当前实现以源码为准**；发现文档与代码漂移时应修正文档，不要照过时描述改代码。
 
+## 0. 必读技能（uTools 插件开发）
+
+开发、修改或排查 uTools 插件前，若当前环境提供 `utools-plugin-dev` 技能（uTools 官方开发 Skill，内含官方 API 参考与开发规范），**必须先加载它**：以其中 `references/` 的官方文档作为 uTools API、参数、生命周期与运行行为的唯一依据，不得凭经验或本机环境推断。技能规范与项目文档冲突时，优先官方文档。
+
 ## 1. 项目事实
 
 - 一句话：uTools 插件「Live Server」—— 给静态页面目录一键启动带 WebSocket 热刷新的本地 HTTP 服务，并提供管理面板（多目录、启停、端口/目录快捷打开）。
 - 来源：fork 自 https://github.com/lblblong/live-server-utools 。当前远程：`origin` = MrTian257/live-server-utools，`upstream` = lblblong/live-server-utools；当前分支 `master`（上游历史 3 个提交）。**GitHub 网络当前不可达**（fetch 失败），不要假设能拉取远程或查阅线上 issue。
-- 本机环境：Windows 11；uTools 7.8.0；Node v24.22.2（构建请用 Node 20.20.2，见 §11）；npm 11.19.1 / yarn 1.22.22；npm 镜像 `registry.npmmirror.com` 可用；依赖已安装（node_modules 在本地，不入库）。
+- 本机环境：Windows 11；uTools 7.8.0；Node v24.22.2（构建要求 **Node >= 24**，本机已用 Node 26.7.0 验证，见 §11）；npm 11.19.1 / yarn 1.22.22；npm 镜像 `registry.npmmirror.com` 可用；依赖已安装（node_modules 在本地，不入库）。
 - 版本：`package.json` 0.1.0；`plugin.json` 0.0.1（不一致，统一口径待用户决定）。
 - 平台：`plugin.json` 的 `platform` 仅 `win32`。
 
 ## 2. 技术栈
 
-- **渲染进程（插件主界面）**：React 17 + MobX 6 + TypeScript 4 + CRA4（react-scripts 4.0.1）+ craco 6；SCSS modules，`craco-sass-resources-loader` 把 `src/assets/css/vs.scss` 注入每个 scss；craco 关闭了 eslint。
-- **预加载（Node 侧）**：独立 TS 工程 `preload/tsconfig.json`（ES5/commonjs，`strict=false`），`tsc` 输出 `preload/dist/index.js`；运行时依赖 vendored `preload/lib/live-server`（改版 live-server 1.x）与 `preload/lib/http-shutdown`；依赖清单见 `preload/package.json`（chokidar 2 / connect / faye-websocket 0.11 / send 0.16 / serve-index / morgan / event-stream / tslib）。2026-11-05 优化中已裁剪 opn / http-auth / cors / proxy-middleware / http-proxy / object-assign（默认路径不需要，见 §6-2/7）。
+- **渲染进程（插件主界面）**：React 18 + MobX 6 + TypeScript 5 + **Vite 7**（`@vitejs/plugin-react`）；SCSS modules（`sass`），`src/pages/manager/index.module.scss` 通过 `@use` 引用 `src/assets/css/vs.scss` 变量；构建产物固定输出 `build/`（`base: './'`）。
+- **预加载（Node 侧）**：独立 TS 工程 `preload/tsconfig.json`（ES2019/commonjs，`strict=false`），`tsc` 输出 `preload/dist/index.js`；运行时依赖 vendored `preload/lib/live-server`（改版 live-server 1.x）与 `preload/lib/http-shutdown`；依赖清单见 `preload/package.json`（chokidar 3 / connect / faye-websocket 0.11 / send 0.19 / serve-index / morgan / event-stream）。2026-11-05 优化中已裁剪 opn / http-auth / cors / proxy-middleware / http-proxy / object-assign（默认路径不需要，见 §6-2/7）。
 - **持久化**：uTools 内置 db（`utools.db`），key = `utools.getLocalId() + '_servers'`，value = `[{ dir, port, customPort? }]`（`customPort` 缺省 `false`，旧数据兼容）。
 - **产物**：`build/`（渲染进程）、`preload/dist/index.js`（预加载）；`plugin.json` 的 `main` / `preload` 分别指向这两处。
 
@@ -22,7 +26,7 @@
 
 | 路径 | 职责 |
 | --- | --- |
-| `src/index.tsx` | 渲染入口，挂载 `IndexPage`（StrictMode），引入图标字体 CSS（已移除 reportWebVitals / web-vitals 指标上报） |
+| `src/index.tsx` | 渲染入口：`createRoot` 挂载 `IndexPage`（StrictMode），引入图标字体 CSS |
 | `src/pages/manager/` | 管理面板 UI：列表、状态点、端口/目录快捷打开、修改端口（行内编辑）、删除/打开目录/启停按钮、悬浮新增按钮；`index.module.scss` 样式 |
 | `src/store/server.ts` | 单例 `StoreServer`：服务启停、端口分配调用、uTools 事件与 db 持久化 |
 | `src/model/live-server.ts` | 领域模型：`LiveServer`（state/dir/port/customPort/server）、`LiveServerState`（on/off/loading）；第 2 行 `import { Server } from 'preload'` 是根 `preload` link 依赖的类型耦合点 |
@@ -34,9 +38,9 @@
 | `preload/src/utils.ts` | 目录选择对话框、TCP 端口探测与可用端口分配、`isPortAvailable`、`waitServerReady`（真实 listening/error）、`closeServer`（shutdown 回调 + 500ms force 兜底，含 watcher 关闭） |
 | `preload/lib/live-server/` | 改版 live-server：静态服务 + serve-index + chokidar 监听（watcher 挂在 server 实例上）+ 注入热刷新脚本（`injected.html`，按 path+mtime 缓存检测）；`opn`/`http-auth`/`cors`/`proxy-middleware`/`http-proxy` 为已裁剪的可选能力 |
 | `preload/lib/http-shutdown/` | 给 server 挂 `shutdown(cb)` / `forceShutdown(cb)`，跟踪并销毁空闲连接 |
-| `public/` | CRA 模板（`index.html` 的 `<title>` 仍是旧模板「指南针管理后台」） |
+| `public/` | 静态资源（favicon / robots / manifest），由 Vite 原样复制到 `build/`；主界面入口是根目录 `index.html` |
 | `plugin.json` | uTools 插件清单：命令 `Live Server` + 超级面板「启动实时文件服务」（匹配 `explorer.exe`） |
-| `craco.config.js` / `tsconfig.json` / `.env` | 构建配置 |
+| `vite.config.ts` / `tsconfig.json` / `index.html` | 渲染进程构建配置（Vite 7，`base: './'`）与主界面 HTML 入口 |
 | `assets/logo.png` | 插件图标 |
 
 ## 4. 运行时架构
@@ -57,7 +61,9 @@
 8. 热刷新：live-server 在 HTML 的 `</body>` / `</svg>` / `</head>` 前注入 `injected.html`；浏览器连 `ws://host/path/ws`；文件变更广播 `reload`，`.css` 变更广播 `refreshcss`。
 9. 服务由插件 preload 进程持有：插件退出/重载时进程销毁，服务随之结束（代码未显式清理）。
 
-## 5. 构建与运行（2026-11-04 静态分析；最新可用流程见 §11）
+## 5. 构建与运行（CRA4 历史记录，已于 2026-11-05 废弃）
+
+> ⚠️ 本节是迁移前的 CRA4（react-scripts 4 + craco）分析，**已不再适用**。当前构建链为 Vite 7 + React 18 + TypeScript 5，完整命令见 §11。保留本节仅用于理解历史问题（Node 24 下 CRA4 无法构建是迁移的直接原因）。
 
 > 以下为 2026-11-04 静态核对结论（本机 Node v24.22.2、uTools 7.8.0）；未实际安装依赖或构建。
 
@@ -78,9 +84,9 @@
 
 ## 6. 已知风险与坑（按影响排序）
 
-> 2026-11-05 性能/流畅度优化（分支 `feature/optimize-performance`）已修复 2、3、5、6、7、9、10、11（key）、13 中标注「已修复」的部分；1、4、8、12、14、15 仍存在，见各条说明。对应方案与体积数据见 `docs/plans/optimization.md`。
+> 2026-11-05 性能/流畅度优化（分支 `feature/optimize-performance`）已修复 2、3、5、6、7、9、10、11（key）、13 中标注「已修复」的部分；同日将构建链迁移到 Vite 7 + React 18 + TypeScript 5（要求 Node >= 24）。1、4、8、12 仍存在，见各条说明。对应方案与体积数据见 `docs/plans/optimization.md`。
 
-1. **构建链现状易踩**：见第 5 节——依赖 link 阻塞安装、Node 24 下 CRA4 md4 需 `--openssl-legacy-provider`、构建顺序必须先 preload 后根、根目录若干脚本失效。
+1. **构建链现状**：CRA4 在 Node >= 24 无法构建（webpack4 md4 / postcss exports），已于 2026-11-05 迁移到 Vite 7 + React 18 + TypeScript 5，命令见 §11；§5 为历史记录。
 2. **一次端口冲突可能误杀别的服务（最高危运行时缺陷）**：~~listen error 里 `e.toString().red` 打印 undefined 并调用全局 `LiveServer.shutdown()` 关掉别的服务~~ **已修复**：error 只关当前实例的 watcher/server，日志改为 `console.error(e)`；模块级 `LiveServer.shutdown()` 仅保留为兼容 API。
 3. **启动是 fire-and-forget**：~~start() 同步返回、UI 立刻置 on~~ **已修复**：新增 `waitServerReady`（listening/error/5s 超时），渲染层 await 后才置 on，失败回滚 off 并提示。
 4. **端口探测/分配**：TCP connect 127.0.0.1 判断占用、默认 6600；冲突时跳 `[...usedPort]` 的**末位 + 1（Set 插入序）**再逐个 +1；探测成功后已 `close` socket（此前泄漏已修）。**仍存在**：无「探测→预留」机制 → 两路 startServer 可能拿到同一端口（TOCTOU）；**自定义端口探测只连 127.0.0.1，而服务绑 0.0.0.0**：仅绑定具体 LAN IP 的进程、Windows 保留端口段或探测→绑定 TOCTOU 仍可能漏检（见 `docs/plans/custom-port.md`）。
@@ -92,9 +98,9 @@
 10. **状态双口径**：**已修复**：按钮文案改由 `state===loading` 驱动（启动中…/停止中…/保存中…），active 样式仍按 `server` 真值。
 11. **MobX/React 细节**：**已修复** 列表 `key`、空态、按钮即时反馈；残留：`.lbox/.dir` 的 `min-width: 0`、删除二次确认、`'file://' + dir` 的 Windows 路径规范化未处理。
 12. **初始化顺序无防护**：若 `onPluginEnter` 先于 `onPluginReady`，`startServer` 新增的行可能被随后 `loadDb` 覆盖（丢 server 引用、状态回 off）；`onPluginEnter` 重复调用 `getCurrentFolderPath()`。**仍存在**。
-13. **构建联动陷阱**：根 `build:preload` 带 `--esModuleInterop`，一旦启用，`import * as httpShutdown` 会被 `__importStar` 包裹 → `window.utils.httpShutdown(server)` 不可调用（当前 preload tsconfig 未开才恰好可用）。**已修复**：`lib/live-server/index.d.ts` 已同步 `StartOptions`/`Server` 扩展。残留：根 `build:preload` 等失效脚本未清理。
-14. **模板残留**：`public/index.html` 标题「指南针管理后台」；`public/manifest.json` 引用的 logo192/logo512 实际不存在。
-15. **无自动化测试**：`src/react/setupTests.ts` 存在但无测试用例。
+13. **构建联动陷阱（已随构建链迁移消失）**：旧 CRA 脚本的 `--esModuleInterop` 问题不再存在；`preload/src/index.ts` 保留 `httpShutdown` 的调用签名断言，删除会导致渲染层 `window.utils.httpShutdown(...)` 类型报错。`lib/live-server/index.d.ts` 已同步 `StartOptions`/`Server` 扩展。
+14. **模板残留**：已删除 CRA 的 `public/index.html`，根 `index.html` 标题改为 `Live Server`；`public/manifest.json` 仍引用不存在的 logo192/logo512（页面未引用，可后续清理）。
+15. **无自动化测试**：迁移时移除 CRA 的 `src/react/setupTests.ts` 与 testing-library 依赖；当前无测试用例。
 
 ## 7. Agent 团队与写域
 
@@ -105,7 +111,7 @@
 | `lead` | 需求接入、拆解、集成、文档、git 提交（不 push） | `AGENTS.md`、`docs/`、最终整合 |
 | `panel-dev` | 渲染进程 UI/状态（React/MobX/SCSS） | `src/` |
 | `runtime-dev` | 预加载/Node 侧（live-server 生命周期、端口、关闭、注入） | `preload/src/`、`preload/lib/`（第三方库尽量不改；必须改时在提交信息中说明） |
-| `build-qa` | 构建/打包/依赖/插件清单 + 静态审查与回归清单 | `package.json`、`tsconfig.json`、`craco.config.js`、`plugin.json`、`.env`、构建脚本；审查时只读 `src/`、`preload/` |
+| `build-qa` | 构建/打包/依赖/插件清单 + 静态审查与回归清单 | `package.json`、`tsconfig.json`、`vite.config.ts`、`index.html`、`plugin.json`、构建脚本；审查时只读 `src/`、`preload/` |
 
 团队约定：
 
@@ -128,7 +134,7 @@
 - **注释**：所有新增/修改代码必须带合适注释 —— 关键逻辑、非显而易见的取舍、边界条件、回归原因都要写清，不产出无注释代码块。
 - **格式**：prettier（`semi: false`、单引号、2 空格、`printWidth: 120`）；组件用函数式 + `Observer`。
 - **状态管理**：MobX `makeAutoObservable`；服务状态统一用 `LiveServerState`；不要把 React 局部状态与 MobX 混用。
-- **渲染进程不能直接 require Node 模块**（CRA 环境）：一切 Node 能力经 `window.utils` 暴露，并同步维护 `preload/src/index.ts` 的 utils 对象与 `Window.utils` 声明。
+- **渲染进程不能直接 require Node 模块**（Vite 浏览器环境）：一切 Node 能力经 `window.utils` 暴露，并同步维护 `preload/src/index.ts` 的 utils 对象与 `Window.utils` 声明。
 - **文档**：本文件与 `docs/` 是长期文档；`.scratch/` 只放临时验证材料。
 - **不要提交**：`build/`、`preload/dist/`、`node_modules/`、`.scratch/`、个人配置；`.eslintcache` 属历史遗留已被跟踪，不要新增这类缓存文件。
 
@@ -137,37 +143,40 @@
 - 依赖与脚本以 `package.json`、`yarn.lock`、`preload/package.json` 为准。
 - 插件清单与命令以 `plugin.json` 为准。
 - 运行时行为以 `preload/src/`、`preload/lib/live-server/`、`src/store/server.ts` 为准。
-- 构建配置以 `craco.config.js`、`tsconfig.json`、`preload/tsconfig.json`、`.env` 为准。
+- 构建配置以 `vite.config.ts`、`index.html`、`tsconfig.json`、`preload/tsconfig.json` 为准。
 - 文档不得把未验证的计划、测试结果或历史实现写成当前事实。
 
-## 11. 构建与安装（2026-11-05 实测通过）
+## 11. 构建与安装（2026-11-05 升级后实测）
 
 ### 环境
 
-- 构建用 **Node 20.20.2**（可用 Volta / nvm 等版本管理器安装）。Node 24 跑 CRA4 会因 webpack4 md4 与 postcss 旧版 exports 规则失败，不要用。
-- `NODE_OPTIONS=--openssl-legacy-provider`（Node 20 仍需要，用于 webpack4 的 md4）。
+- 构建要求 **Node >= 24**（根 `package.json` 的 `engines` 字段）。本机用 Volta 的 **Node 26.7.0** 实测通过。
+- uTools 插件运行时由 uTools Runtime 决定（官方文档：Electron 34.5.8 / Chromium 132 / Node.js 20.19.1），与本机 Node 版本无关；preload 侧按 Node 20 能力编写即可。
+- 构建链：**Vite 7 + React 18 + TypeScript 5**；preload 仍由独立 tsc 工程编译为 CommonJS（target ES2019，无 tslib 依赖）。
+- 迁移原因：原 CRA4（webpack4）在 Node >= 24 无法构建（md4 摘要与 postcss exports 限制），且 uTools 官方开发工具已采用 Vite 模板，因此替换构建工具而不是降级 Node。
 
 ### 安装依赖
 
 ```powershell
-yarn install --ignore-engines                      # 根目录（lockfile 已把 registry 重写到 registry.npmmirror.com）
+yarn install --ignore-engines                      # 根目录
 cd preload; yarn install --ignore-engines; cd ..   # preload 运行依赖（devDeps 是 link:../node_modules/*，必须在根安装之后）
 ```
 
-- 拉包报 `CERT_HAS_EXPIRED` 时：把 `yarn.lock` / `preload/yarn.lock` 里的 `registry.npm.taobao.org`、`registry.yarnpkg.com`、`registry.npmjs.org` 重写为 `registry.npmmirror.com`。
-- `package.json` 的 `resolutions.postcss-safe-parser = 4.0.2` 是必须的：CRA4 自带的 5.0.2 会对 postcss 8 做深路径 require，在 Node 20+ 直接 `ERR_PACKAGE_PATH_NOT_EXPORTED`。
+- 依赖解析走 `registry.npmmirror.com`（lockfile 已指向该镜像）；拉包报证书过期时检查系统时间或改用镜像。
 
-### 构建（顺序固定）
+### 开发与构建
 
 ```powershell
-cd preload; npx tsc -d -p tsconfig.json; cd ..   # 产物 preload/dist/{index.js,index.d.ts}
-$env:NODE_OPTIONS='--openssl-legacy-provider'
-node <node20>\node.exe <volta-yarn>\lib\cli.js run build   # 或 PATH 前置 node20 后 yarn build
+yarn dev                                  # Vite 开发服务器
+yarn build                                # 先 tsc preload，再 vite build -> build/
+npx tsc --noEmit -p tsconfig.json         # 渲染层类型检查
+cd preload; npx tsc -d -p tsconfig.json   # 仅重建 preload
 ```
 
-- 根 `tsconfig.json` **不要加 `paths`**：CRA 构建会强制删除并改写该文件；`preload` 类型由 `baseUrl:"."` 解析到 `preload/dist/index.d.ts`（这也是必须先构建 preload 的原因）。
-- 根 `package.json` 不要恢复 `"preload": "link:..."` 依赖；`src/model/live-server.ts` 的 `import { Server } from 'preload'` 靠 baseUrl 目录解析。
-- `preload/src/index.ts` 对 `httpShutdown` 有调用签名断言（`as unknown as (server:any)=>any`），删除会导致渲染层 `window.utils.httpShutdown(...)` 类型报错。
+- 根 `tsconfig.json` 使用 `moduleResolution: Bundler`，并通过 `paths` 把 `preload` 映射到 `preload/src/index.ts`（类型单一来源）；Vite 实际打包时 `import { Server } from 'preload'` 是纯类型导入，会被移除，不需要运行时解析。
+- `vite.config.ts` 的 `base: './'` 必须保留：插件在 uTools 内以本地文件加载 `build/index.html`，绝对资源路径会失效。
+- 入口 HTML 是仓库根目录的 `index.html`（Vite 约定）；`public/` 下文件由 Vite 原样复制到 `build/`。
+- 构建产物：`build/`（渲染）、`preload/dist/`（预加载）；两者都被 .gitignore 排除。
 
 ### 打包成 uTools 插件 asar
 

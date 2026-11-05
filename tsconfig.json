@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
     "baseUrl": ".",
-    "target": "es5",
+    "paths": {
+      "preload": ["preload/src/index.ts"]
+    },
+    "target": "ES2020",
     "lib": [
       "dom",
       "dom.iterable",
@@ -15,15 +18,14 @@
     "noImplicitAny": false,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
-    "module": "esnext",
-    "moduleResolution": "node",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "downlevelIteration": true,
-    "experimentalDecorators": true,
     "noEmit": true,
     "jsx": "react-jsx",
     "types": [
+      "vite/client",
       "utools-helper/@types/utools",
       "utools-helper/@types/electron",
       "@types/node"
@@ -31,6 +33,7 @@
   },
   "include": [
     "src",
-    "global.d.ts"
+    "global.d.ts",
+    "vite.config.ts"
   ]
 }

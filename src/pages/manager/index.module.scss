@@ -1,4 +1,4 @@
-@import '../../assets/css/vs.scss';
+@use '../../assets/css/vs.scss' as *;
 
 .index {
   position: relative;
