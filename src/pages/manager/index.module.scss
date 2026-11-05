@@ -1,4 +1,4 @@
-@import '../../assets/css/vs.scss';
+@use '../../assets/css/vs.scss' as *;
 
 .index {
   position: relative;
@@ -22,8 +22,26 @@
       background: rgba($color: $color-primary, $alpha: 0.9);
       box-shadow: 0px 5px 12px 4px rgba($color: #000000, $alpha: 0.09);
     }
+    // 端口保存期间（store 正在 stop+start 重启）的视觉禁用态。
+    // 新增按钮是 div，没有原生 disabled，靠「点击守卫 + 该 class」双重拦截，见 index.tsx 的 portSaving 判断。
+    &.addBtnDisabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      // 禁用态屏蔽 hover 的上浮反馈（否则看起来仍可点）；同时压回 .addBtn:hover 的背景/阴影变化
+      &:hover {
+        background: $color-primary;
+        box-shadow: none;
+      }
+    }
   }
   .list {
+    // 空列表提示：不引入依赖，列表为空时只渲染这一行
+    .empty {
+      padding: 56px 16px;
+      text-align: center;
+      color: #999;
+      font-size: 13px;
+    }
     .item,
     .item > .lbox,
     .item > .rbox {
@@ -64,6 +82,26 @@
           &:hover {
             color: $color-primary;
           }
+        }
+        // 行内端口输入框：尺寸与 .port 对齐（宽 60px + 左外边距 16px），切换编辑时行高不跳动
+        .portInput {
+          box-sizing: border-box;
+          width: 60px;
+          margin-left: 16px;
+          padding: 2px 4px;
+          font-size: inherit;
+          font-family: inherit;
+          font-weight: bold;
+          // 颜色继承所在行文本色（active 行 #333 / 非 active 行 #999），避免非 active 行进入编辑时颜色跳变
+          color: inherit;
+          background: #fff;
+          border: 1px solid $color-primary;
+          border-radius: 2px;
+          outline: none;
+        }
+        // 校验失败态：红框提示；用户重新输入时由组件移除该 class
+        .portInputError {
+          border-color: $color-third;
         }
       }
 

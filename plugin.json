@@ -1,10 +1,11 @@
 {
+  "name": "a6d8c9da",
   "pluginName": "Live Server",
   "description": "启动静态资源实时服务，静态页面开发神器。",
   "author": "lblblong",
   "homepage": "https://github.com/lblblong/live-server-utools",
-  "main": "./build/index.html",
-  "preload": "./preload/dist/index.js",
+  "main": "build/index.html",
+  "preload": "preload/dist/index.js",
   "version": "0.0.1",
   "logo": "assets/logo.png",
   "platform": ["win32"],

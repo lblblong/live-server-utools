@@ -7,6 +7,13 @@
 /preload/node_modules
 /preload/dist
 
+# 临时构建/验证材料（AGENTS.md 约定）
+/.scratch
+
+# 构建/工具缓存
+/.eslintcache
+*.local
+
 # Logs
 logs
 *.log
